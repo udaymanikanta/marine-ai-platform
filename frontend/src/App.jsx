@@ -359,7 +359,7 @@ label={({ value }) => (value)}
                     <h2 style={{ marginBottom: "20px" }}>System Health</h2>
 
                     <StatusItem label="PostgreSQL Database" status="Operational" />
-                    <StatusItem label="AI Engine (Phi Model)" status="Active" />
+                    <StatusItem label="AI Engine (Google Gemini)" status="Active" />
                     <StatusItem label="API Gateway" status="Online" />
                     <StatusItem label="Heatmap Engine" status="Rendering" />
                   </div>
