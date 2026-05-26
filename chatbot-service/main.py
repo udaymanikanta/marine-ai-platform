@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import create_engine, text
 import requests
 import os
+from sqlalchemy import create_engine, text
 
 # ======================================
 # APP INIT
@@ -23,6 +23,8 @@ app.add_middleware(
 # ENV CONFIG
 # ======================================
 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 DATABASE_URL = os.getenv("DATABASE_URL")  # 👈 set in Render
 if not DATABASE_URL:
@@ -41,6 +43,45 @@ def get_memory(session_id: str):
     return conversation_memory[session_id]
 
 # ======================================
+# LLM FUNCTION
+# ======================================
+
+def ask_llm(prompt):
+    if not GEMINI_API_KEY:
+        return "Error: GEMINI_API_KEY is not set. Please set the environment variable in the chatbot service."
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    headers = {
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": prompt
+                    }
+                ]
+            }
+        ]
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        candidates = data.get("candidates", [])
+        if candidates:
+            content = candidates[0].get("content", {})
+            parts = content.get("parts", [])
+            if parts:
+                return parts[0].get("text", "")
+        return str(data)
+    except Exception as e:
+        return f"Error communicating with Gemini API: {str(e)}"
+
+# ======================================
 # REQUEST MODEL
 # ======================================
 
@@ -48,42 +89,6 @@ class ChatRequest(BaseModel):
     question: str
     session_id: str
 
-# ======================================
-# LLM FUNCTION
-# ======================================
-
-def ask_llm(prompt):
-    API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-base"
-
-    headers = {
-        "Authorization": f"Bearer {os.getenv('HF_API_KEY')}"
-    }
-
-    payload = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 200}
-    }
-
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-
-        data = response.json()
-
-        # 🔁 Retry if model loading
-        if isinstance(data, dict) and "error" in data:
-            if "loading" in data["error"].lower():
-                return "Model loading, try again in 5 seconds."
-            return ""
-
-        if isinstance(data, list):
-            return data[0].get("generated_text", "")
-
-        return str(data)
-
-    except Exception as e:
-        print("HF ERROR:", str(e))
-        return "AI unavailable"
-        
 # ======================================
 # CLEAN SQL
 # ======================================
@@ -94,6 +99,7 @@ def clean_sql(sql):
 
     sql = sql.replace("```sql", "").replace("```", "").strip()
     return sql.split("\n")[0]
+
 # ======================================
 # GENERATE SQL
 # ======================================
@@ -128,7 +134,6 @@ Return SQL only.
         return ""
 
     return clean_sql(sql)
-
 
 # ======================================
 # CHAT ENDPOINT
